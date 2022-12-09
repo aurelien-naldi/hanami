@@ -30,12 +30,6 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.9
-        architecture: "x64"
-
     # Build and test
     - name: Regular build
       run: cargo build --verbose
