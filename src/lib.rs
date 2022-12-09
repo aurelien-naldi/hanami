@@ -3,7 +3,7 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 /// Marker trait to ensure Send + Sync on injectable traits
@@ -12,17 +12,17 @@ impl<I: Send + Sync + 'static> Interface for I {}
 
 /// Hold a cache of some type
 pub trait SingletonCache {
-    fn cached<T: Any>(&self) -> Option<&T>;
-    fn add_cache(&mut self, value: Box<dyn Any>);
+    fn cached<T: Any + Clone>(&self) -> Option<T>;
+    fn add_cache(&self, value: Box<dyn Any>);
 }
 
 /// A provider can build an instance of the selected struct / interface
 pub trait Factory<I: Interface + 'static + ?Sized>: SingletonCache {
     fn build_new(&self) -> Arc<I>;
 
-    fn get(&mut self) -> Arc<I> {
+    fn get(&self) -> Arc<I> {
         if let Some(o) = self.cached::<Arc<I>>() {
-            return o.clone();
+            return o;
         }
 
         let a = self.build_new();
@@ -34,16 +34,19 @@ pub trait Factory<I: Interface + 'static + ?Sized>: SingletonCache {
 
 pub struct Registry<F> {
     _factory: F,
-    singletons: HashMap<TypeId, Box<dyn Any>>,
+    singletons: Mutex<HashMap<TypeId, Box<dyn Any>>>,
 }
 
 impl<F> SingletonCache for Registry<F> {
-    fn cached<T: Any>(&self) -> Option<&T> {
-        self.singletons.get(&TypeId::of::<T>())?.downcast_ref::<T>()
+    fn cached<T: Any + Clone>(&self) -> Option<T> {
+        let guard = self.singletons.lock().unwrap();
+        let r = guard.get(&TypeId::of::<T>())?.downcast_ref::<T>()?.clone();
+        Some(r)
     }
 
-    fn add_cache(&mut self, value: Box<dyn Any>) {
-        self.singletons.insert((*value).type_id(), value);
+    fn add_cache(&self, value: Box<dyn Any>) {
+        let mut guard = self.singletons.lock().unwrap();
+        guard.insert((*value).type_id(), value);
     }
 }
 
@@ -51,7 +54,7 @@ impl<F> Registry<F> {
     pub fn new(factory: F) -> Self {
         Registry {
             _factory: factory,
-            singletons: HashMap::new(),
+            singletons: Mutex::default(),
         }
     }
 }
@@ -98,25 +101,28 @@ mod tests {
 
     impl Factory<dyn TestTrait> for Registry<MyModule> {
         fn build_new(&self) -> Arc<dyn TestTrait> {
+            println!("Build an instance of the FIRST trait");
+            let _o: Arc<dyn OtherTrait> = self.get();
             Arc::new(SecretImpl {})
         }
     }
 
     impl Factory<dyn OtherTrait> for Registry<MyModule> {
         fn build_new(&self) -> Arc<dyn OtherTrait> {
+            println!("Build an instance of the OTHER trait");
             Arc::new(OtherSecretImpl {})
         }
     }
 
     #[test]
     fn it_works() {
-        let mut m = Registry::new(MyModule {});
+        let m = Registry::new(MyModule {});
 
         let d: Arc<dyn TestTrait> = m.get();
 
         d.cheers();
 
-        let mut registry = Registry::new(MyModule {});
+        let registry = Registry::new(MyModule {});
 
         let cpt: Arc<dyn TestTrait> = registry.get();
         let cpt2: Arc<dyn TestTrait> = registry.get();
