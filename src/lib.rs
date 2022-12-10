@@ -62,7 +62,7 @@ impl<F> Registry<F> {
 #[cfg(test)]
 mod tests {
 
-    use std::{ptr, sync::Arc};
+    use std::sync::Arc;
 
     use super::*;
 
@@ -101,7 +101,6 @@ mod tests {
 
     impl Factory<dyn TestTrait> for Registry<MyModule> {
         fn build_new(&self) -> Arc<dyn TestTrait> {
-            println!("Build an instance of the FIRST trait");
             let _o: Arc<dyn OtherTrait> = self.get();
             Arc::new(SecretImpl {})
         }
@@ -109,28 +108,39 @@ mod tests {
 
     impl Factory<dyn OtherTrait> for Registry<MyModule> {
         fn build_new(&self) -> Arc<dyn OtherTrait> {
-            println!("Build an instance of the OTHER trait");
             Arc::new(OtherSecretImpl {})
         }
     }
 
+    // Disable clippy lint on the comparison of fat pointers:
+    // this is only test code, the issue should not arise in this context
+    // and should be properly fixed in future rust versions
+    // * https://github.com/rust-lang/rust/pull/80505
+    // * https://stackoverflow.com/questions/67109860/how-to-compare-trait-objects-within-an-arc
+    #[allow(clippy::vtable_address_comparisons)]
     #[test]
     fn it_works() {
-        let m = Registry::new(MyModule {});
-
-        let d: Arc<dyn TestTrait> = m.get();
-
-        d.cheers();
-
+        // Create an empty registry
         let registry = Registry::new(MyModule {});
 
+        // The service instances can be created and are cached
         let cpt: Arc<dyn TestTrait> = registry.get();
         let cpt2: Arc<dyn TestTrait> = registry.get();
+        assert!(Arc::ptr_eq(&cpt, &cpt2));
+
+        // We can force the creation of a new instance
         let cpt3: Arc<dyn TestTrait> = registry.build_new();
+        assert!(!Arc::ptr_eq(&cpt, &cpt3));
 
-        assert!(ptr::eq(cpt.as_ref(), cpt2.as_ref()));
-        assert!(!ptr::eq(cpt.as_ref(), cpt3.as_ref()));
+        // The new instance does not update the cache. Maybe it should
+        let cpt4: Arc<dyn TestTrait> = registry.get();
+        assert!(Arc::ptr_eq(&cpt, &cpt4));
+        assert!(!Arc::ptr_eq(&cpt3, &cpt4));
 
-        let _: Arc<dyn OtherTrait> = registry.get();
+        // If the implementation of a trait depends on another service,
+        // an implementation of this other service is now be in the cache
+        let o1: Arc<dyn OtherTrait> = registry.cached().unwrap();
+        let o2: Arc<dyn OtherTrait> = registry.get();
+        assert!(Arc::ptr_eq(&o1, &o2));
     }
 }
