@@ -10,51 +10,64 @@ use std::{
 pub trait Interface: Send + Sync {}
 impl<I: Send + Sync + 'static> Interface for I {}
 
-/// Hold a cache of some type
-pub trait SingletonCache {
-    fn cached<T: Any + Clone>(&self) -> Option<T>;
-    fn add_cache(&self, value: Box<dyn Any>);
-}
+/// A factory can create a new instance of the selected struct or interface
+pub trait Factory<F, I: 'static + ?Sized> {
+    fn build_new(&self, cache: &mut AnyCache) -> Arc<I>;
 
-/// A provider can build an instance of the selected struct / interface
-pub trait Factory<I: Interface + 'static + ?Sized>: SingletonCache {
-    fn build_new(&self) -> Arc<I>;
-
-    fn get(&self) -> Arc<I> {
-        if let Some(o) = self.cached::<Arc<I>>() {
-            return o;
+    fn get_or_build(&self, cache: &mut AnyCache) -> Arc<I> {
+        // return a clone of the cached instance if available
+        if let Some(o) = cache.cached::<Arc<I>>() {
+            return Arc::clone(o);
         }
 
-        let a = self.build_new();
-        self.add_cache(Box::new(a.clone()));
+        // Create a new instance, add it to the cache and return a clone
+        let new_instance = self.build_new(cache);
+        cache.add_cache(Box::new(new_instance.clone()));
+        new_instance
+    }
+}
 
-        a
+pub trait Provider<I: 'static + ?Sized> {
+    fn get(&self) -> Arc<I>;
+}
+
+impl<F: Factory<F, I>, I: Interface + 'static + ?Sized> Provider<I> for Registry<F> {
+    fn get(&self) -> Arc<I> {
+        let mut guard = self.cache.lock().unwrap();
+        self.factory.get_or_build(&mut guard)
     }
 }
 
 pub struct Registry<F> {
-    _factory: F,
-    singletons: Mutex<HashMap<TypeId, Box<dyn Any>>>,
+    factory: Box<F>,
+    cache: Mutex<AnyCache>,
 }
 
-impl<F> SingletonCache for Registry<F> {
-    fn cached<T: Any + Clone>(&self) -> Option<T> {
-        let guard = self.singletons.lock().unwrap();
-        let r = guard.get(&TypeId::of::<T>())?.downcast_ref::<T>()?.clone();
-        Some(r)
+/// Hold a cache of some type
+#[derive(Default)]
+pub struct AnyCache {
+    singletons: HashMap<TypeId, Box<dyn Any>>,
+}
+
+impl AnyCache {
+    pub fn cached<T: Any>(&self) -> Option<&T> {
+        //        let guard = self.singletons.lock().unwrap();
+        //        let r = guard?.clone();
+        self.singletons.get(&TypeId::of::<T>())?.downcast_ref::<T>()
     }
 
-    fn add_cache(&self, value: Box<dyn Any>) {
-        let mut guard = self.singletons.lock().unwrap();
-        guard.insert((*value).type_id(), value);
+    pub fn add_cache(&mut self, value: Box<dyn Any>) {
+        self.singletons.insert((*value).type_id(), value);
+        //        let mut guard = self.singletons.lock().unwrap();
+        //        guard.insert((*value).type_id(), value);
     }
 }
 
 impl<F> Registry<F> {
     pub fn new(factory: F) -> Self {
         Registry {
-            _factory: factory,
-            singletons: Mutex::default(),
+            factory: Box::new(factory),
+            cache: Mutex::default(),
         }
     }
 }
@@ -99,15 +112,15 @@ mod tests {
 
     struct MyModule {}
 
-    impl Factory<dyn TestTrait> for Registry<MyModule> {
-        fn build_new(&self) -> Arc<dyn TestTrait> {
-            let _o: Arc<dyn OtherTrait> = self.get();
+    impl Factory<MyModule, dyn TestTrait> for MyModule {
+        fn build_new(&self, cache: &mut AnyCache) -> Arc<dyn TestTrait> {
+            let _o: Arc<dyn OtherTrait> = self.get_or_build(cache);
             Arc::new(SecretImpl {})
         }
     }
 
-    impl Factory<dyn OtherTrait> for Registry<MyModule> {
-        fn build_new(&self) -> Arc<dyn OtherTrait> {
+    impl Factory<MyModule, dyn OtherTrait> for MyModule {
+        fn build_new(&self, _cache: &mut AnyCache) -> Arc<dyn OtherTrait> {
             Arc::new(OtherSecretImpl {})
         }
     }
@@ -128,18 +141,11 @@ mod tests {
         let cpt2: Arc<dyn TestTrait> = registry.get();
         assert!(Arc::ptr_eq(&cpt, &cpt2));
 
-        // We can force the creation of a new instance
-        let cpt3: Arc<dyn TestTrait> = registry.build_new();
-        assert!(!Arc::ptr_eq(&cpt, &cpt3));
-
-        // The new instance does not update the cache. Maybe it should
-        let cpt4: Arc<dyn TestTrait> = registry.get();
-        assert!(Arc::ptr_eq(&cpt, &cpt4));
-        assert!(!Arc::ptr_eq(&cpt3, &cpt4));
-
         // If the implementation of a trait depends on another service,
         // an implementation of this other service is now be in the cache
-        let o1: Arc<dyn OtherTrait> = registry.cached().unwrap();
+        let guard = registry.cache.lock().unwrap();
+        let o1: Arc<dyn OtherTrait> = guard.cached().cloned().unwrap();
+        drop(guard);
         let o2: Arc<dyn OtherTrait> = registry.get();
         assert!(Arc::ptr_eq(&o1, &o2));
     }
