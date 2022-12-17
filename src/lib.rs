@@ -1,74 +1,45 @@
 //! TODO: crate-level doc!!
 
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+use std::sync::Mutex;
 
-/// Marker trait to ensure Send + Sync on injectable traits
-pub trait Interface: Send + Sync {}
-impl<I: Send + Sync + 'static> Interface for I {}
-
-/// A factory can create a new instance of the selected struct or interface
-pub trait Factory<F, I: 'static + ?Sized> {
-    fn build_new(&self, cache: &mut AnyCache) -> Arc<I>;
-
-    fn get_or_build(&self, cache: &mut AnyCache) -> Arc<I> {
-        // return a clone of the cached instance if available
-        if let Some(o) = cache.cached::<Arc<I>>() {
-            return Arc::clone(o);
-        }
-
-        // Create a new instance, add it to the cache and return a clone
-        let new_instance = self.build_new(cache);
-        cache.add_cache(Box::new(new_instance.clone()));
-        new_instance
-    }
-}
-
-pub trait Provider<I: 'static + ?Sized> {
-    fn get(&self) -> Arc<I>;
-}
-
-impl<F: Factory<F, I>, I: Interface + 'static + ?Sized> Provider<I> for Registry<F> {
-    fn get(&self) -> Arc<I> {
-        let mut guard = self.cache.lock().unwrap();
-        self.factory.get_or_build(&mut guard)
-    }
-}
-
-pub struct Registry<F> {
-    factory: Box<F>,
-    cache: Mutex<AnyCache>,
-}
-
-/// Hold a cache of some type
+/// Register and retrieve singletons of Any types
 #[derive(Default)]
-pub struct AnyCache {
+pub struct TypeMap {
     singletons: HashMap<TypeId, Box<dyn Any>>,
 }
 
-impl AnyCache {
-    pub fn cached<T: Any>(&self) -> Option<&T> {
-        //        let guard = self.singletons.lock().unwrap();
-        //        let r = guard?.clone();
-        self.singletons.get(&TypeId::of::<T>())?.downcast_ref::<T>()
-    }
+impl TypeMap {
+    #[allow(clippy::map_entry)]
+    pub fn get_or_insert_with<T: Any, F: FnOnce(&mut TypeMap) -> T>(&mut self, builder: F) -> &T {
+        // We separate the initial test and the insert action instead of using entry::or_insert
+        // to be able to forward a &mut to self, required to support inter-dependencies
+        let type_id = TypeId::of::<T>();
+        if !self.singletons.contains_key(&type_id) {
+            let new_instance = Box::new(builder(self));
+            self.singletons.insert(type_id, new_instance);
+        }
 
-    pub fn add_cache(&mut self, value: Box<dyn Any>) {
-        self.singletons.insert((*value).type_id(), value);
-        //        let mut guard = self.singletons.lock().unwrap();
-        //        guard.insert((*value).type_id(), value);
+        // We can chain unwraps here as we have just inserted missing entries and the downcast cannot fail
+        self.singletons
+            .get(&type_id)
+            .unwrap()
+            .downcast_ref::<T>()
+            .unwrap()
     }
 }
 
-impl<F> Registry<F> {
-    pub fn new(factory: F) -> Self {
-        Registry {
-            factory: Box::new(factory),
-            cache: Mutex::default(),
-        }
+pub trait FromTypemap: Clone + 'static {
+    fn create_using_typemap(typemap: &mut TypeMap) -> Box<Self>;
+
+    fn resolve(typemap: &mut TypeMap) -> &Self {
+        typemap.get_or_insert_with(|map| Self::create_using_typemap(map))
+    }
+
+    fn resolve_sync(typemap: &Mutex<TypeMap>) -> Self {
+        let mut guard = typemap.lock().unwrap();
+        Self::resolve(&mut guard).clone()
     }
 }
 
@@ -79,49 +50,44 @@ mod tests {
 
     use super::*;
 
-    trait TestTrait: Interface {
+    trait TestTrait {
         fn cheers(&self);
     }
 
-    trait OtherTrait: Interface {
+    trait OtherTrait {
         fn stamp(&self);
+        fn helper(&self) -> &Arc<dyn TestTrait>;
     }
 
     struct SecretImpl {}
-
     impl TestTrait for SecretImpl {
         fn cheers(&self) {
             println!("here is the secret ingredient");
         }
     }
-    struct SecretImplv2 {}
-
-    impl TestTrait for SecretImplv2 {
-        fn cheers(&self) {
-            println!("here is the NEWEST secret ingredient");
-        }
+    struct OtherSecretImpl {
+        helper: Arc<dyn TestTrait>,
     }
-
-    struct OtherSecretImpl {}
-
     impl OtherTrait for OtherSecretImpl {
         fn stamp(&self) {
             println!("actual secret stamping impl");
         }
-    }
-
-    struct MyModule {}
-
-    impl Factory<MyModule, dyn TestTrait> for MyModule {
-        fn build_new(&self, cache: &mut AnyCache) -> Arc<dyn TestTrait> {
-            let _o: Arc<dyn OtherTrait> = self.get_or_build(cache);
-            Arc::new(SecretImpl {})
+        fn helper(&self) -> &Arc<dyn TestTrait> {
+            &self.helper
         }
     }
 
-    impl Factory<MyModule, dyn OtherTrait> for MyModule {
-        fn build_new(&self, _cache: &mut AnyCache) -> Arc<dyn OtherTrait> {
-            Arc::new(OtherSecretImpl {})
+    impl FromTypemap for Arc<dyn TestTrait> {
+        fn create_using_typemap(_typemap: &mut TypeMap) -> Box<Self> {
+            Box::new(Arc::new(SecretImpl {}))
+        }
+    }
+
+    impl FromTypemap for Arc<dyn OtherTrait> {
+        fn create_using_typemap(typemap: &mut TypeMap) -> Box<Self> {
+            Box::new(Arc::new(OtherSecretImpl {
+                helper: Arc::<dyn TestTrait>::resolve(typemap).clone(),
+            }))
         }
     }
 
@@ -134,19 +100,16 @@ mod tests {
     #[test]
     fn it_works() {
         // Create an empty registry
-        let registry = Registry::new(MyModule {});
+        let typemap = Mutex::new(TypeMap::default());
 
         // The service instances can be created and are cached
-        let cpt: Arc<dyn TestTrait> = registry.get();
-        let cpt2: Arc<dyn TestTrait> = registry.get();
+        let cpt = Arc::<dyn TestTrait>::resolve_sync(&typemap);
+        let cpt2 = Arc::<dyn TestTrait>::resolve_sync(&typemap);
         assert!(Arc::ptr_eq(&cpt, &cpt2));
 
         // If the implementation of a trait depends on another service,
         // an implementation of this other service is now be in the cache
-        let guard = registry.cache.lock().unwrap();
-        let o1: Arc<dyn OtherTrait> = guard.cached().cloned().unwrap();
-        drop(guard);
-        let o2: Arc<dyn OtherTrait> = registry.get();
-        assert!(Arc::ptr_eq(&o1, &o2));
+        let cpt3 = Arc::<dyn OtherTrait>::resolve_sync(&typemap);
+        assert!(Arc::ptr_eq(&cpt, cpt3.helper()));
     }
 }
