@@ -1,0 +1,41 @@
+name: Rust
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false # If one platform fails, allow the rest to keep testing.
+      matrix:
+        os: [ubuntu-latest, windows-latest] #, macos-latest]
+    runs-on: ${{matrix.os}}
+
+    steps:
+    - uses: actions/checkout@v3
+
+    # Create or retrieve the cache for cargo
+    - uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    # Build and test
+    - name: Regular build
+      run: cargo build --verbose
+    - name: Run tests
+      if: matrix.os == 'ubuntu-latest'
+      run: cargo test --verbose
+    - name: Check examples
+      if: matrix.os == 'ubuntu-latest'
+      run: cargo test --examples --verbose
+    - name: Check formatting
+      if: matrix.os == 'ubuntu-latest'
+      run: cargo fmt -- --check
+    - name: Clippy
+      if: matrix.os == 'ubuntu-latest'
+      run: cargo clippy
