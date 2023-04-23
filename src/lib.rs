@@ -5,7 +5,11 @@
 //! ```
 //! # use std::sync::Arc;
 //! # use hanami::*;
-//! // Define traits and implementors
+//! #
+//! // Define struct, traits and implementors
+//! #[derive(Default)]
+//! struct MySharedData;
+//!
 //! trait MyTrait: Send + Sync {
 //!     fn cheers(&self);
 //! }
@@ -20,9 +24,14 @@
 //! }
 //!
 //!
-//! // Define a resolver module and individual resolution rules
+//! // Define a resolver module and resolution rules
 //! struct MyResolver;
-//! resolve_singleton!(dyn MyTrait, MyImpl, MyResolver);
+//!
+//! // Simple singleton of an explicit struct implementing Default
+//! resolve_singleton!(MyResolver, MySharedData);
+//!
+//! // Singleton of a trait object
+//! resolve_singleton!(MyResolver, dyn MyTrait: MyImpl);
 //!
 //!
 //! # fn main() -> Result<(), WiringError> {

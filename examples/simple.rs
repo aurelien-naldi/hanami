@@ -49,10 +49,12 @@ struct MyResolver {
 }
 
 // Resolve the Logger trait
-resolve_singleton!(dyn Logger, LoggerImpl, LogResolver);
+resolve_singleton!(LogResolver, dyn Logger: LoggerImpl);
 
 // Resolve the DateLogger trait
-resolve_singleton!(dyn DateLogger, DateLoggerImpl, LogResolver, Arc<dyn Logger>);
+resolve_singleton!(LogResolver, dyn DateLogger: DateLoggerImpl,
+    new, Arc<dyn Logger>
+);
 
 // Declare proxy resolution rules
 resolve_proxy!(MyResolver, LogResolver, helper);

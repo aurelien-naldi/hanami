@@ -13,10 +13,41 @@ impl TestTrait for SecretImpl {
         println!("here is the secret ingredient");
     }
 }
+
+trait TestActionable {
+    fn do_something(&self);
+}
+
+struct ConcreteActionable {
+    helper: Arc<dyn TestTrait>,
+}
+
+impl ConcreteActionable {
+    fn new(helper: Arc<dyn TestTrait>) -> Self {
+        Self { helper }
+    }
+}
+
+impl TestActionable for ConcreteActionable {
+    fn do_something(&self) {
+        self.helper.cheers()
+    }
+}
+
+struct SimpleAction;
+
+impl SimpleAction {
+    fn create() -> Self {
+        SimpleAction
+    }
+}
+
 #[derive(Default)]
 struct TestModule {}
 
-resolve_singleton!(dyn TestTrait, SecretImpl, TestModule);
+resolve_singleton!(TestModule, dyn TestTrait: SecretImpl);
+
+resolve_provider!(TestModule, SimpleAction, SimpleActionFactory, create);
 
 // Disable clippy lint on the comparison of fat pointers:
 // this is only test code, the issue should not arise in this context

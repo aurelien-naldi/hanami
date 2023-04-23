@@ -5,7 +5,11 @@ Experimental compile-time dependency injection crate with composable resolution 
 ## Simple use case
 
 ```rust
-// Define traits and implementors
+#
+// Define struct, traits and implementors
+#[derive(Default)]
+struct MySharedData;
+
 trait MyTrait: Send + Sync {
     fn cheers(&self);
 }
@@ -20,9 +24,14 @@ impl MyTrait for MyImpl {
 }
 
 
-// Define a resolver module and individual resolution rules
+// Define a resolver module and resolution rules
 struct MyResolver;
-resolve_singleton!(dyn MyTrait, MyImpl, MyResolver);
+
+// Simple singleton of an explicit struct implementing Default
+resolve_singleton!(MyResolver, MySharedData);
+
+// Singleton of a trait object
+resolve_singleton!(MyResolver, dyn MyTrait: MyImpl);
 
 
 // Create and use an injector using our resolver module
