@@ -12,6 +12,9 @@ trait DateLogger: Send + Sync {
     fn log_date(&self);
 }
 
+#[derive(Default, Debug)]
+struct SomeHelper;
+
 #[derive(Default)]
 struct LoggerImpl;
 
@@ -23,11 +26,12 @@ impl Logger for LoggerImpl {
 
 struct DateLoggerImpl {
     logger: Arc<dyn Logger>,
+    helper: Arc<SomeHelper>,
 }
 
 impl DateLoggerImpl {
-    fn new(logger: Arc<dyn Logger>) -> Self {
-        Self { logger }
+    fn new(logger: Arc<dyn Logger>, helper: Arc<SomeHelper>) -> Self {
+        Self { logger, helper }
     }
 }
 
@@ -36,7 +40,25 @@ impl DateLogger for DateLoggerImpl {
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap();
-        self.logger.log(&format!("{}s since epoch", now.as_secs()));
+        self.logger.log(&format!(
+            "{}s since epoch with {:?}",
+            now.as_secs(),
+            &self.helper
+        ));
+    }
+}
+
+struct MyCommand {
+    _date_logger: Arc<dyn DateLogger>,
+}
+
+impl MyCommand {
+    fn new(_date_logger: Arc<dyn DateLogger>) -> Self {
+        Self { _date_logger }
+    }
+
+    fn call_me(&self) {
+        println!("the command works");
     }
 }
 
@@ -48,16 +70,27 @@ struct MyResolver {
     helper: LogResolver,
 }
 
+// Resolve a singleton of an explicit type
+resolve_singleton!(LogResolver, SomeHelper);
+
 // Resolve the Logger trait
 resolve_singleton!(LogResolver, dyn Logger: LoggerImpl);
 
 // Resolve the DateLogger trait
 resolve_singleton!(LogResolver, dyn DateLogger: DateLoggerImpl,
-    new, Arc<dyn Logger>
+    new, dyn Logger, SomeHelper
 );
 
 // Declare proxy resolution rules
 resolve_proxy!(MyResolver, LogResolver, helper);
+
+resolve_instance!(
+    MyResolver,
+    MyCommand: MyCommand,
+    MyCommandFactory,
+    new,
+    date_logger: Arc<dyn DateLogger>
+);
 
 #[allow(clippy::vtable_address_comparisons)]
 fn main() -> Result<(), WiringError> {
@@ -68,6 +101,9 @@ fn main() -> Result<(), WiringError> {
     let b: Arc<dyn DateLogger> = injector.inject()?;
 
     b.log_date();
+
+    let c: Arc<MyCommand> = injector.inject()?;
+    c.call_me();
 
     Ok(())
 }

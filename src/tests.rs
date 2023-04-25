@@ -15,7 +15,7 @@ impl TestTrait for SecretImpl {
 }
 
 trait TestActionable {
-    fn do_something(&self);
+    fn get_helper(&self) -> Arc<dyn TestTrait>;
 }
 
 struct ConcreteActionable {
@@ -29,8 +29,8 @@ impl ConcreteActionable {
 }
 
 impl TestActionable for ConcreteActionable {
-    fn do_something(&self) {
-        self.helper.cheers()
+    fn get_helper(&self) -> Arc<dyn TestTrait> {
+        self.helper.clone()
     }
 }
 
@@ -47,7 +47,15 @@ struct TestModule {}
 
 resolve_singleton!(TestModule, dyn TestTrait: SecretImpl);
 
-resolve_provider!(TestModule, SimpleAction, SimpleActionFactory, create);
+resolve_instance!(TestModule, SimpleAction, SimpleActionFactory, create);
+
+resolve_instance!(
+    TestModule,
+    dyn TestActionable: ConcreteActionable,
+    ActionableFactory,
+    new,
+    arg1: Arc<dyn TestTrait>
+);
 
 // Disable clippy lint on the comparison of fat pointers:
 // this is only test code, the issue should not arise in this context
@@ -64,6 +72,13 @@ fn resolve_singleton() -> Result<(), WiringError> {
 
     v1.cheers();
     assert!(Arc::ptr_eq(&v1, &v2));
+
+    // retrieve two on-demand instances: they are different but share the same helper
+    let a1: Arc<dyn TestActionable> = resolver.inject()?;
+    let a2: Arc<dyn TestActionable> = resolver.inject()?;
+    assert!(!Arc::ptr_eq(&a1, &a2));
+    let (h1, h2) = (a1.get_helper(), a2.get_helper());
+    assert!(Arc::ptr_eq(&h1, &h2));
 
     Ok(())
 }
