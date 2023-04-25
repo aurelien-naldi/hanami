@@ -5,7 +5,6 @@ Experimental compile-time dependency injection crate with composable resolution 
 ## Simple use case
 
 ```rust
-#
 // Define struct, traits and implementors
 #[derive(Default)]
 struct MySharedData;

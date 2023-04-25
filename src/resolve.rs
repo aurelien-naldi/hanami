@@ -18,13 +18,13 @@ pub type Provider<T> = Arc<dyn Provide<T>>;
 /// This trait represents a map associating a type to a provider for this type.
 /// It relies on external resolver to create these resolvers.
 pub trait ProviderMap: Sized {
-    fn resolve_with<T: 'static, M: Resolve<T>>(
+    fn resolve_with<T: 'static>(
         &mut self,
-        resolver: &M,
+        resolver: &impl Resolve<T>,
     ) -> Result<&Provider<T>, WiringError>;
 
-    fn inject_with<T: 'static, M: Resolve<T>>(&mut self, resolver: &M) -> Result<T, WiringError> {
-        self.resolve_with::<T, M>(resolver)
+    fn inject_with<T: 'static>(&mut self, resolver: &impl Resolve<T>) -> Result<T, WiringError> {
+        self.resolve_with::<T>(resolver)
             .map(|p| p.deref().provide())
     }
 }

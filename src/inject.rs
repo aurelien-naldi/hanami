@@ -91,9 +91,9 @@ impl TypeMap {
 }
 
 impl ProviderMap for TypeMap {
-    fn resolve_with<T: 'static, M: Resolve<T>>(
+    fn resolve_with<T: 'static>(
         &mut self,
-        resolver: &M,
+        resolver: &impl Resolve<T>,
     ) -> Result<&Provider<T>, WiringError> {
         if self.get_provider::<T>().is_none() {
             self.book::<T>();

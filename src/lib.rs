@@ -5,7 +5,6 @@
 //! ```
 //! # use std::sync::Arc;
 //! # use hanami::*;
-//! #
 //! // Define struct, traits and implementors
 //! #[derive(Default)]
 //! struct MySharedData;
