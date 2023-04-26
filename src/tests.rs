@@ -34,6 +34,19 @@ impl TestActionable for ConcreteActionable {
     }
 }
 
+struct CyclicalA;
+impl CyclicalA {
+    fn with(_: Arc<CyclicalB>) -> Self {
+        Self
+    }
+}
+struct CyclicalB;
+impl CyclicalB {
+    fn with(_: Arc<CyclicalA>) -> Self {
+        Self
+    }
+}
+
 struct SimpleAction;
 
 impl SimpleAction {
@@ -50,6 +63,10 @@ impl SimpleAction {
 struct TestModule {}
 
 resolve_singleton!(TestModule, dyn TestTrait: SecretImpl);
+
+// define cyclical resolution rules
+resolve_singleton!(TestModule, CyclicalA, with, Arc<CyclicalB>);
+resolve_singleton!(TestModule, CyclicalB, with, Arc<CyclicalA>);
 
 resolve_instance!(TestModule, SimpleAction, SimpleActionFactory, create);
 
@@ -86,5 +103,46 @@ fn resolve_singleton() -> Result<(), WiringError> {
     let simple_action: SimpleAction = resolver.inject()?;
     simple_action.callme();
 
+    Ok(())
+}
+
+#[allow(clippy::vtable_address_comparisons)]
+#[test]
+fn set_provider_early() -> Result<(), WiringError> {
+    let mut resolver = Hanami::new(TestModule {});
+
+    let singleton: Arc<dyn TestTrait> = Arc::new(SecretImpl::default());
+    resolver.set_provider(SingletonProvider::build(singleton.clone()))?;
+
+    let v1: Arc<dyn TestTrait> = resolver.inject()?;
+    assert!(Arc::ptr_eq(&v1, &singleton));
+
+    Ok(())
+}
+
+#[allow(clippy::vtable_address_comparisons)]
+#[test]
+fn set_provider_late() -> Result<(), WiringError> {
+    let mut resolver = Hanami::new(TestModule {});
+
+    let v1: Arc<dyn TestTrait> = resolver.inject()?;
+
+    let singleton: Arc<dyn TestTrait> = Arc::new(SecretImpl::default());
+    assert!(resolver
+        .set_provider(SingletonProvider::build(singleton.clone()))
+        .is_err());
+
+    let v2: Arc<dyn TestTrait> = resolver.inject()?;
+    assert!(!Arc::ptr_eq(&v1, &singleton));
+    assert!(Arc::ptr_eq(&v1, &v2));
+
+    Ok(())
+}
+
+#[test]
+fn detect_cyclical() -> Result<(), WiringError> {
+    let resolver = Hanami::new(TestModule {});
+    let v1: Result<Arc<CyclicalA>, WiringError> = resolver.inject();
+    matches!(v1, Err(WiringError::AlreadyResolved));
     Ok(())
 }

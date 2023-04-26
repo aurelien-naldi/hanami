@@ -1,5 +1,5 @@
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
+use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Mutex;
 
 use crate::*;
@@ -10,6 +10,8 @@ pub trait Inject<T> {
     ///
     /// Return an error if the type has not been resolved at startup
     fn inject(&self) -> Result<T, WiringError>;
+
+    fn set_provider(&mut self, provider: Provider<T>) -> Result<(), WiringError>;
 }
 
 /// Dependency injection registry.
@@ -39,8 +41,15 @@ impl<T: 'static, M: Resolve<T>> Inject<T> for Hanami<M> {
     fn inject(&self) -> Result<T, WiringError> {
         self.tm.lock().unwrap().inject_with(&self.resolver)
     }
+    fn set_provider(&mut self, provider: Provider<T>) -> Result<(), WiringError> {
+        self.tm
+            .lock()
+            .unwrap()
+            .set_if_vacant::<Provider<T>>(TypeMapEntry::Ready(Box::new(provider)))
+    }
 }
 
+#[derive(Debug)]
 enum TypeMapEntry {
     Resolving,
     Ready(Box<dyn Any>),
@@ -76,17 +85,24 @@ impl TypeMap {
         }
     }
 
-    /// Start resolving a type.
-    /// After this binding, ```self.get<T>()``` will return ```Resolving```
-    fn book<T: Any>(&mut self) {
-        self.0.insert(TypeId::of::<T>(), TypeMapEntry::Resolving);
+    /// Fill a free spot
+    fn set_if_vacant<T: Any>(&mut self, data: TypeMapEntry) -> Result<(), WiringError> {
+        let Entry::Vacant(v) = self.0.entry(TypeId::of::<T>()) else {
+            // TODO: extra work to detect cyclical dependencies?
+            return Err(WiringError::AlreadyResolved);
+        };
+        v.insert(data);
+        Ok(())
     }
 
-    /// Insert a new singleton.
-    /// After this binding, ```self.get<T>()``` will return Some(ref)
-    fn bind<T: Any>(&mut self, data: T) {
-        self.0
-            .insert(TypeId::of::<T>(), TypeMapEntry::Ready(Box::new(data)));
+    /// Fill a resolving spot
+    fn set_if_resolving<T: Any>(&mut self, data: TypeMapEntry) -> Result<(), WiringError> {
+        let Entry::Occupied(mut o) = self.0.entry(TypeId::of::<T>()) else {
+            return Err(WiringError::AlreadyResolved);
+        };
+        // Check the occupied status
+        o.insert(data);
+        Ok(())
     }
 }
 
@@ -96,9 +112,9 @@ impl ProviderMap for TypeMap {
         resolver: &impl Resolve<T>,
     ) -> Result<&Provider<T>, WiringError> {
         if self.get_provider::<T>().is_none() {
-            self.book::<T>();
+            self.set_if_vacant::<Provider<T>>(TypeMapEntry::Resolving)?;
             let p = resolver.build_provider(self)?;
-            self.bind(p);
+            self.set_if_resolving::<Provider<T>>(TypeMapEntry::Ready(Box::new(p)))?;
         }
         Ok(self.get_provider().unwrap())
     }

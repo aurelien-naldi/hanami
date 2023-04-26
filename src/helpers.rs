@@ -49,12 +49,12 @@ macro_rules! resolve_singleton {
         resolve_singleton!($resolver_type, $singleton_type : $concrete_type, default);
     };
     ($resolver_type:ty, $singleton_type: ty, $constructor: ident $(, $param_type:ty)*) => {
-        resolve_singleton!($resolver_type, $singleton_type : $singleton_type, $constructor $(, $param_type:ty)*?);
+        resolve_singleton!($resolver_type, $singleton_type : $singleton_type, $constructor $(, $param_type)*);
     };
     ($resolver_type:ty, $singleton_type:ty : $concrete_type: ty, $constructor: ident $(, $param_type:ty)*) => {
         impl Resolve<Arc<$singleton_type>> for $resolver_type {
             fn build_provider(&self, _injector: &mut impl ProviderMap) -> Result<Provider<Arc<$singleton_type>>, WiringError> {
-                let singleton: Arc<$singleton_type> = Arc::new(<$concrete_type>::$constructor( $(_injector.inject_with::<Arc<$param_type>>(self)?, )* ));
+                let singleton: Arc<$singleton_type> = Arc::new(<$concrete_type>::$constructor( $(_injector.inject_with::<$param_type>(self)?, )* ));
                 Ok(SingletonProvider::build(singleton))
             }
         }

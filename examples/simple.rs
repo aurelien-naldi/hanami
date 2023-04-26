@@ -78,7 +78,7 @@ resolve_singleton!(LogResolver, dyn Logger: LoggerImpl);
 
 // Resolve the DateLogger trait
 resolve_singleton!(LogResolver, dyn DateLogger: DateLoggerImpl,
-    new, dyn Logger, SomeHelper
+    new, Arc<dyn Logger>, Arc<SomeHelper>
 );
 
 // Declare proxy resolution rules
