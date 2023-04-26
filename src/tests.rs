@@ -40,6 +40,10 @@ impl SimpleAction {
     fn create() -> Self {
         SimpleAction
     }
+
+    fn callme(&self) {
+        println!("The simple action was called");
+    }
 }
 
 #[derive(Default)]
@@ -74,11 +78,13 @@ fn resolve_singleton() -> Result<(), WiringError> {
     assert!(Arc::ptr_eq(&v1, &v2));
 
     // retrieve two on-demand instances: they are different but share the same helper
-    let a1: Arc<dyn TestActionable> = resolver.inject()?;
-    let a2: Arc<dyn TestActionable> = resolver.inject()?;
-    assert!(!Arc::ptr_eq(&a1, &a2));
+    let a1: Box<dyn TestActionable> = resolver.inject()?;
+    let a2: Box<dyn TestActionable> = resolver.inject()?;
     let (h1, h2) = (a1.get_helper(), a2.get_helper());
     assert!(Arc::ptr_eq(&h1, &h2));
+
+    let simple_action: SimpleAction = resolver.inject()?;
+    simple_action.callme();
 
     Ok(())
 }

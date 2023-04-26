@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::SystemTime};
+use std::{rc::Rc, sync::Arc, time::SystemTime};
 
 use hanami::*;
 
@@ -86,7 +86,7 @@ resolve_proxy!(MyResolver, LogResolver, helper);
 
 resolve_instance!(
     MyResolver,
-    MyCommand: MyCommand,
+    MyCommand: Rc: MyCommand,
     MyCommandFactory,
     new,
     date_logger: Arc<dyn DateLogger>
@@ -102,7 +102,7 @@ fn main() -> Result<(), WiringError> {
 
     b.log_date();
 
-    let c: Arc<MyCommand> = injector.inject()?;
+    let c: Rc<MyCommand> = injector.inject()?;
     c.call_me();
 
     Ok(())
