@@ -59,8 +59,7 @@ impl SimpleAction {
     }
 }
 
-#[derive(Default)]
-struct TestModule {}
+struct TestModule;
 
 resolve_singleton!(TestModule, dyn TestTrait: SecretImpl);
 
@@ -78,27 +77,25 @@ resolve_instance!(
     arg1: Arc<dyn TestTrait>
 );
 
-// Disable clippy lint on the comparison of fat pointers:
-// this is only test code, the issue should not arise in this context
-// and should be properly fixed in future rust versions
-// * https://github.com/rust-lang/rust/pull/80505
-// * https://stackoverflow.com/questions/67109860/how-to-compare-trait-objects-within-an-arc
-#[allow(clippy::vtable_address_comparisons)]
+fn is_same_ptr<T: ?Sized>(a1: &Arc<T>, a2: &Arc<T>) -> bool {
+    Arc::ptr_eq(a1, a2)
+}
+
 #[test]
 fn resolve_singleton() -> Result<(), WiringError> {
-    let resolver = Hanami::new(TestModule {});
+    let resolver = Hanami::new(TestModule);
 
     let v1: Arc<dyn TestTrait> = resolver.inject()?;
     let v2: Arc<dyn TestTrait> = resolver.inject()?;
 
     v1.cheers();
-    assert!(Arc::ptr_eq(&v1, &v2));
+    assert!(is_same_ptr(&v1, &v2));
 
     // retrieve two on-demand instances: they are different but share the same helper
     let a1: Box<dyn TestActionable> = resolver.inject()?;
     let a2: Box<dyn TestActionable> = resolver.inject()?;
     let (h1, h2) = (a1.get_helper(), a2.get_helper());
-    assert!(Arc::ptr_eq(&h1, &h2));
+    assert!(is_same_ptr(&h1, &h2));
 
     let simple_action: SimpleAction = resolver.inject()?;
     simple_action.callme();
@@ -106,24 +103,22 @@ fn resolve_singleton() -> Result<(), WiringError> {
     Ok(())
 }
 
-#[allow(clippy::vtable_address_comparisons)]
 #[test]
 fn set_provider_early() -> Result<(), WiringError> {
-    let mut resolver = Hanami::new(TestModule {});
+    let mut resolver = Hanami::new(TestModule);
 
     let singleton: Arc<dyn TestTrait> = Arc::new(SecretImpl::default());
     resolver.set_provider(SingletonProvider::build(singleton.clone()))?;
 
     let v1: Arc<dyn TestTrait> = resolver.inject()?;
-    assert!(Arc::ptr_eq(&v1, &singleton));
+    assert!(is_same_ptr(&v1, &singleton));
 
     Ok(())
 }
 
-#[allow(clippy::vtable_address_comparisons)]
 #[test]
 fn set_provider_late() -> Result<(), WiringError> {
-    let mut resolver = Hanami::new(TestModule {});
+    let mut resolver = Hanami::new(TestModule);
 
     let v1: Arc<dyn TestTrait> = resolver.inject()?;
 
@@ -133,15 +128,15 @@ fn set_provider_late() -> Result<(), WiringError> {
         .is_err());
 
     let v2: Arc<dyn TestTrait> = resolver.inject()?;
-    assert!(!Arc::ptr_eq(&v1, &singleton));
-    assert!(Arc::ptr_eq(&v1, &v2));
+    assert!(!is_same_ptr(&v1, &singleton));
+    assert!(is_same_ptr(&v1, &v2));
 
     Ok(())
 }
 
 #[test]
 fn detect_cyclical() -> Result<(), WiringError> {
-    let resolver = Hanami::new(TestModule {});
+    let resolver = Hanami::new(TestModule);
     let v1: Result<Arc<CyclicalA>, WiringError> = resolver.inject();
     matches!(v1, Err(WiringError::AlreadyResolved));
     Ok(())

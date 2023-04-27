@@ -6,11 +6,14 @@ use crate::*;
 
 /// Application-level dependency injection
 pub trait Inject<T> {
-    /// Obtain an instance of a given type.
+    /// Obtain an instance of the target type.
     ///
-    /// Return an error if the type has not been resolved at startup
+    /// Return an error if the type could not be resolved
     fn inject(&self) -> Result<T, WiringError>;
 
+    /// Override the provider for the target type.
+    ///
+    /// Return an error if the type has already been resolved
     fn set_provider(&mut self, provider: Provider<T>) -> Result<(), WiringError>;
 }
 
