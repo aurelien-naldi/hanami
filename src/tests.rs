@@ -67,12 +67,11 @@ resolve_singleton!(TestModule, dyn TestTrait: SecretImpl);
 resolve_singleton!(TestModule, CyclicalA, with, Arc<CyclicalB>);
 resolve_singleton!(TestModule, CyclicalB, with, Arc<CyclicalA>);
 
-resolve_instance!(TestModule, SimpleAction, SimpleActionFactory, create);
+resolve_raw_instance!(TestModule, SimpleAction, create);
 
 resolve_instance!(
     TestModule,
-    dyn TestActionable: ConcreteActionable,
-    ActionableFactory,
+    Box: dyn TestActionable: ConcreteActionable,
     new,
     arg1: Arc<dyn TestTrait>
 );

@@ -86,8 +86,7 @@ resolve_proxy!(MyResolver, LogResolver, helper);
 
 resolve_instance!(
     MyResolver,
-    MyCommand: Rc: MyCommand,
-    MyCommandFactory,
+    Rc: MyCommand: MyCommand,
     new,
     date_logger: Arc<dyn DateLogger>
 );

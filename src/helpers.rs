@@ -67,36 +67,18 @@ macro_rules! resolve_singleton {
 /// This struct is then used to implement ```Resolve<Arc<$instance_type>>``` for ```$resolver_type```.
 #[macro_export]
 macro_rules! resolve_instance {
-    ($resolver_type:ty, $instance_type: ty, $provider_type: ident) => {
-        resolve_instance!($resolver_type, $instance_type: $instance_type, $provider_type);
+    ($resolver_type:ty, $bx: ident : $instance_type: ty) => {
+        resolve_instance!($resolver_type, $bx : $instance_type: $instance_type);
     };
-    ($resolver_type:ty, $instance_type: ty : $concrete_type: ty, $provider_type: ident) => {
-        resolve_instance!($resolver_type, $instance_type: $concrete_type, $provider_type, default);
+    ($resolver_type:ty, $bx: ident : $instance_type: ty : $concrete_type: ty) => {
+        resolve_instance!($resolver_type, $bx : $instance_type: $concrete_type, default);
     };
-    ($resolver_type:ty, $instance_type: ty : $bx: ident : $concrete_type: ty, $provider_type: ident) => {
-        resolve_instance!($resolver_type, $instance_type: $bx : $concrete_type, $provider_type, default);
-    };
-    ($resolver_type:ty, $instance_type: ty, $provider_type: ident, $constructor: ident $(, $arg_name: ident : $arg_type: ty)*) => {
-        struct $provider_type { $( $arg_name: Arc<dyn Provide<$arg_type>>, )* }
-
-        impl Provide<$instance_type> for $provider_type {
-            fn provide(&self) -> $instance_type {
-                <$instance_type>::$constructor( $( self.$arg_name.provide(), )* )
-            }
-        }
-
-        impl Resolve<$instance_type> for $resolver_type {
-            fn build_provider(&self, _injector: &mut impl ProviderMap) -> Result<Provider<$instance_type>, WiringError> {
-                Ok(Arc::new( $provider_type {
-                    $( $arg_name: _injector.resolve_with::<$arg_type>(self)?.clone(), )*
-                } ))
-            }
+    ($resolver_type:ty, $bx: ident : $instance_type: ty : $concrete_type: ty, $constructor: ident $(, $arg_name: ident : $arg_type: ty)*) => {
+        paste::paste! {
+            resolve_instance!($resolver_type, $bx : $instance_type : $concrete_type : [< $concrete_type Factory >], $constructor $(, $arg_name : $arg_type )*);
         }
     };
-    ($resolver_type:ty, $instance_type: ty : $concrete_type: ty, $provider_type: ident, $constructor: ident $(, $arg_name: ident : $arg_type: ty)*) => {
-        resolve_instance!($resolver_type, $instance_type : Box : $concrete_type, $provider_type, $constructor $(, $arg_name : $arg_type )*);
-    };
-    ($resolver_type:ty, $instance_type: ty : $bx: ident : $concrete_type: ty, $provider_type: ident, $constructor: ident $(, $arg_name: ident : $arg_type: ty)*) => {
+    ($resolver_type:ty, $bx: ident : $instance_type: ty : $concrete_type: ty : $provider_type: ident, $constructor: ident $(, $arg_name: ident : $arg_type: ty)*) => {
         struct $provider_type { $( $arg_name: Arc<dyn Provide<$arg_type>>, )* }
 
         impl Provide<$bx<$instance_type>> for $provider_type {
@@ -107,6 +89,42 @@ macro_rules! resolve_instance {
 
         impl Resolve<$bx<$instance_type>> for $resolver_type {
             fn build_provider(&self, _injector: &mut impl ProviderMap) -> Result<Provider<$bx<$instance_type>>, WiringError> {
+                Ok(Arc::new( $provider_type {
+                    $( $arg_name: _injector.resolve_with::<$arg_type>(self)?.clone(), )*
+                } ))
+            }
+        }
+    };
+}
+
+/// Declare that our resolver module can create on-demand instances of the selected type.
+///
+/// This relies on the definition of a struct ```$provider_type```used as an intermediate factory for the selected type.\
+/// This struct is then used to implement ```Resolve<$instance_type>``` for ```$resolver_type```.
+#[macro_export]
+macro_rules! resolve_raw_instance {
+    ($resolver_type:ty, $instance_type: ty) => {
+        resolve_raw_instance!($resolver_type, $instance_type, default);
+    };
+    ($resolver_type:ty, $instance_type: ty : $provider_type: ident) => {
+        resolve_raw_instance!($resolver_type, $instance_type : $provider_type, default);
+    };
+    ($resolver_type:ty, $instance_type: ty, $constructor: ident $(, $arg_name: ident : $arg_type: ty)*) => {
+        paste::paste!{
+            resolve_raw_instance!($resolver_type, $instance_type :  [< $instance_type Factory >], $constructor $(, $arg_name : $arg_type )*);
+        }
+    };
+    ($resolver_type:ty, $instance_type: ty : $provider_type: ident, $constructor: ident $(, $arg_name: ident : $arg_type: ty)*) => {
+        struct $provider_type { $( $arg_name: Arc<dyn Provide<$arg_type>>, )* }
+
+        impl Provide<$instance_type> for $provider_type {
+            fn provide(&self) -> $instance_type {
+                <$instance_type>::$constructor( $( self.$arg_name.provide(), )* )
+            }
+        }
+
+        impl Resolve<$instance_type> for $resolver_type {
+            fn build_provider(&self, _injector: &mut impl ProviderMap) -> Result<Provider<$instance_type>, WiringError> {
                 Ok(Arc::new( $provider_type {
                     $( $arg_name: _injector.resolve_with::<$arg_type>(self)?.clone(), )*
                 } ))
