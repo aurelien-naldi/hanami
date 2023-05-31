@@ -69,27 +69,19 @@ struct LogResolver;
 struct MyResolver {
     helper: LogResolver,
 }
+struct MyResolverWrapper<T>(T);
 
 // Resolve a singleton of an explicit type
-resolve_singleton!(LogResolver, SomeHelper);
-
-// Resolve the Logger trait
-resolve_singleton!(LogResolver, dyn Logger: LoggerImpl);
-
-// Resolve the DateLogger trait
-resolve_singleton!(LogResolver, dyn DateLogger: DateLoggerImpl,
-    new, Arc<dyn Logger>, Arc<SomeHelper>
+resolve_singleton!(LogResolver,
+    SomeHelper => SomeHelper::default,
+    dyn Logger => LoggerImpl::default,
+    dyn DateLogger => DateLoggerImpl::new
 );
 
 // Declare proxy resolution rules
-resolve_proxy!(MyResolver, LogResolver, helper);
+resolve_proxy!(MyResolver, LogResolver => helper);
 
-resolve_instance!(
-    MyResolver,
-    Rc: MyCommand: MyCommand,
-    new,
-    date_logger: Arc<dyn DateLogger>
-);
+resolve_instance!(MyResolver, Rc: MyCommand => MyCommand : MyCommand::new);
 
 #[allow(clippy::vtable_address_comparisons)]
 fn main() -> Result<(), WiringError> {
@@ -97,11 +89,11 @@ fn main() -> Result<(), WiringError> {
         helper: LogResolver {},
     });
 
-    let b: Arc<dyn DateLogger> = injector.inject()?;
+    let b: Arc<dyn DateLogger> = injector.inject();
 
     b.log_date();
 
-    let c: Rc<MyCommand> = injector.inject()?;
+    let c: Rc<MyCommand> = injector.inject();
     c.call_me();
 
     Ok(())

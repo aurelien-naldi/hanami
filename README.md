@@ -26,11 +26,11 @@ impl MyTrait for MyImpl {
 // Define a resolver module and resolution rules
 struct MyResolver;
 
-// Simple singleton of an explicit struct implementing Default
-resolve_singleton!(MyResolver, MySharedData);
-
-// Singleton of a trait object
-resolve_singleton!(MyResolver, dyn MyTrait: MyImpl);
+// Resolution rules for simple singletons
+resolve_singleton!(MyResolver,
+    MySharedData => MySharedData::default,
+    dyn MyTrait => MyImpl::default
+);
 
 
 // Create and use an injector using our resolver module

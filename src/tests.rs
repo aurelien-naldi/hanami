@@ -60,21 +60,19 @@ impl SimpleAction {
 }
 
 struct TestModule;
+struct TestModuleWrapper<T>(T);
 
-resolve_singleton!(TestModule, dyn TestTrait: SecretImpl);
+resolve_singleton!(TestModule, dyn TestTrait => SecretImpl::default);
 
 // define cyclical resolution rules
-resolve_singleton!(TestModule, CyclicalA, with, Arc<CyclicalB>);
-resolve_singleton!(TestModule, CyclicalB, with, Arc<CyclicalA>);
+resolve_singleton!(TestModule,
+    CyclicalA => CyclicalA::with,
+    CyclicalB => CyclicalB::with
+);
 
 resolve_raw_instance!(TestModule, SimpleAction, create);
 
-resolve_instance!(
-    TestModule,
-    Box: dyn TestActionable: ConcreteActionable,
-    new,
-    arg1: Arc<dyn TestTrait>
-);
+resolve_instance!(TestModule, Box: dyn TestActionable => ConcreteActionable : ConcreteActionable::new);
 
 fn is_same_ptr<T: ?Sized>(a1: &Arc<T>, a2: &Arc<T>) -> bool {
     Arc::ptr_eq(a1, a2)
@@ -84,19 +82,19 @@ fn is_same_ptr<T: ?Sized>(a1: &Arc<T>, a2: &Arc<T>) -> bool {
 fn resolve_singleton() -> Result<(), WiringError> {
     let resolver = Hanami::new(TestModule);
 
-    let v1: Arc<dyn TestTrait> = resolver.inject()?;
-    let v2: Arc<dyn TestTrait> = resolver.inject()?;
+    let v1: Arc<dyn TestTrait> = resolver.inject();
+    let v2: Arc<dyn TestTrait> = resolver.inject();
 
     v1.cheers();
     assert!(is_same_ptr(&v1, &v2));
 
     // retrieve two on-demand instances: they are different but share the same helper
-    let a1: Box<dyn TestActionable> = resolver.inject()?;
-    let a2: Box<dyn TestActionable> = resolver.inject()?;
+    let a1: Box<dyn TestActionable> = resolver.inject();
+    let a2: Box<dyn TestActionable> = resolver.inject();
     let (h1, h2) = (a1.get_helper(), a2.get_helper());
     assert!(is_same_ptr(&h1, &h2));
 
-    let simple_action: SimpleAction = resolver.inject()?;
+    let simple_action: SimpleAction = resolver.inject();
     simple_action.callme();
 
     Ok(())
@@ -109,7 +107,7 @@ fn set_provider_early() -> Result<(), WiringError> {
     let singleton: Arc<dyn TestTrait> = Arc::new(SecretImpl::default());
     resolver.set_provider(SingletonProvider::build(singleton.clone()))?;
 
-    let v1: Arc<dyn TestTrait> = resolver.inject()?;
+    let v1: Arc<dyn TestTrait> = resolver.inject();
     assert!(is_same_ptr(&v1, &singleton));
 
     Ok(())
@@ -119,14 +117,14 @@ fn set_provider_early() -> Result<(), WiringError> {
 fn set_provider_late() -> Result<(), WiringError> {
     let mut resolver = Hanami::new(TestModule);
 
-    let v1: Arc<dyn TestTrait> = resolver.inject()?;
+    let v1: Arc<dyn TestTrait> = resolver.inject();
 
     let singleton: Arc<dyn TestTrait> = Arc::new(SecretImpl::default());
     assert!(resolver
         .set_provider(SingletonProvider::build(singleton.clone()))
         .is_err());
 
-    let v2: Arc<dyn TestTrait> = resolver.inject()?;
+    let v2: Arc<dyn TestTrait> = resolver.inject();
     assert!(!is_same_ptr(&v1, &singleton));
     assert!(is_same_ptr(&v1, &v2));
 
@@ -134,9 +132,8 @@ fn set_provider_late() -> Result<(), WiringError> {
 }
 
 #[test]
-fn detect_cyclical() -> Result<(), WiringError> {
+#[should_panic]
+fn detect_cyclical() {
     let resolver = Hanami::new(TestModule);
-    let v1: Result<Arc<CyclicalA>, WiringError> = resolver.inject();
-    matches!(v1, Err(WiringError::AlreadyResolved));
-    Ok(())
+    let _v1: Arc<CyclicalA> = resolver.inject();
 }

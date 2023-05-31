@@ -26,20 +26,17 @@
 //! // Define a resolver module and resolution rules
 //! struct MyResolver;
 //!
-//! // Simple singleton of an explicit struct implementing Default
-//! resolve_singleton!(MyResolver, MySharedData);
+//! // Resolution rules for simple singletons
+//! resolve_singleton!(MyResolver,
+//!     MySharedData => MySharedData::default,
+//!     dyn MyTrait => MyImpl::default
+//! );
 //!
-//! // Singleton of a trait object
-//! resolve_singleton!(MyResolver, dyn MyTrait: MyImpl);
 //!
-//!
-//! # fn main() -> Result<(), WiringError> {
 //! // Create and use an injector using our resolver module
 //! let injector = Hanami::new(MyResolver);
-//! let a: Arc<dyn MyTrait> = injector.inject()?;
+//! let a: Arc<dyn MyTrait> = injector.inject();
 //! a.cheers();
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! # Mechanism
@@ -87,8 +84,8 @@ mod helpers;
 mod inject;
 mod resolve;
 
-pub use helpers::SingletonProvider;
-pub use inject::{Hanami, Inject};
+pub use helpers::{FactoryProvider, SingletonProvider};
+pub use inject::{Hanami, Inject, Injectable};
 pub use resolve::{Provide, Provider, ProviderMap, Resolve, ResolvedBy, WiringError};
 
 #[cfg(test)]
