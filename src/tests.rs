@@ -70,7 +70,7 @@ resolve_singleton!(TestModule,
     CyclicalB => CyclicalB::with
 );
 
-resolve_raw_instance!(TestModule, SimpleAction, create);
+resolve_instance!(TestModule, SimpleAction => SimpleAction::create);
 
 resolve_instance!(TestModule, Box: dyn TestActionable => ConcreteActionable : ConcreteActionable::new);
 

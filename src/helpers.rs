@@ -73,10 +73,25 @@ macro_rules! resolve_singleton {
 
 /// Declare that our resolver module can create on-demand instances of the selected type.
 ///
-/// This relies on the definition of a struct ```{$Resover}Wrapper```used as an intermediate factory for the selected type.
-/// This struct is then used to implement ```Resolve<$bx<$Type>>``` for ```$Resolver```.
+/// If the selected type is a raw (unboxed) concrete type, only a constructor function is required.
+///
+/// For trait objects or smart pointers, we also need to specify the boxing type (Box, Rc, Arc) as well as
+/// the concrete type to generate a wrapper between the concrete type and the target. This wrapper uses a
+/// struct named ```{$Resover}Wrapper``` that must be created beforehand as it must be local to be allowed
+///  to add impl and we want to share a single generic struct as much as possible.
 #[macro_export]
 macro_rules! resolve_instance {
+    ($Resolver:ty $(, $Type:ty => $constructor: expr)+) => {
+        $(
+        impl Resolve<$Type> for $Resolver {
+            fn build_provider(&self, injector: &mut impl ProviderMap) -> Provider<$Type> {
+                let prv = injector.inject_provider(self, $constructor);
+                let factory = FactoryProvider::new(prv, $constructor);
+                Arc::new(factory)
+            }
+        }
+        )+
+    };
     ($Resolver:ty $(, $bx: ident : $Type:ty => $Concrete: ty : $constructor: expr)+) => {
         $(
         impl<T: Provide<$Concrete>> Provide<$bx<$Type>> for paste::paste! { [< $Resolver Wrapper >]<T> } {
@@ -93,41 +108,5 @@ macro_rules! resolve_instance {
             }
         }
         )+
-    };
-}
-
-/// Declare that our resolver module can create on-demand instances of the selected type.
-///
-/// This relies on the definition of a struct ```$provider_type```used as an intermediate factory for the selected type.\
-/// This struct is then used to implement ```Resolve<$instance_type>``` for ```$resolver_type```.
-#[macro_export]
-macro_rules! resolve_raw_instance {
-    ($resolver_type:ty, $instance_type: ty) => {
-        resolve_raw_instance!($resolver_type, $instance_type, default);
-    };
-    ($resolver_type:ty, $instance_type: ty : $provider_type: ident) => {
-        resolve_raw_instance!($resolver_type, $instance_type : $provider_type, default);
-    };
-    ($resolver_type:ty, $instance_type: ty, $constructor: ident $(, $arg_name: ident : $arg_type: ty)*) => {
-        paste::paste!{
-            resolve_raw_instance!($resolver_type, $instance_type :  [< $instance_type Factory >], $constructor $(, $arg_name : $arg_type )*);
-        }
-    };
-    ($resolver_type:ty, $instance_type: ty : $provider_type: ident, $constructor: ident $(, $arg_name: ident : $arg_type: ty)*) => {
-        struct $provider_type { $( $arg_name: Arc<dyn Provide<$arg_type>>, )* }
-
-        impl Provide<$instance_type> for $provider_type {
-            fn provide(&self) -> $instance_type {
-                <$instance_type>::$constructor( $( self.$arg_name.provide(), )* )
-            }
-        }
-
-        impl Resolve<$instance_type> for $resolver_type {
-            fn build_provider(&self, _injector: &mut impl ProviderMap) -> Provider<$instance_type> {
-                Arc::new( $provider_type {
-                    $( $arg_name: _injector.resolve_with::<$arg_type>(self).clone(), )*
-                } )
-            }
-        }
     };
 }

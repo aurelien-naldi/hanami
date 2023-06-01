@@ -5,17 +5,13 @@ Experimental compile-time dependency injection crate with composable resolution 
 ## Simple use case
 
 ```rust
-// Define struct, traits and implementors
-#[derive(Default)]
-struct MySharedData;
-
+// Define traits and implementors
 trait MyTrait: Send + Sync {
     fn cheers(&self);
 }
 
 #[derive(Default)]
 struct MyImpl;
-
 impl MyTrait for MyImpl {
   fn cheers(&self) {
     println!("Hello world");
@@ -25,19 +21,39 @@ impl MyTrait for MyImpl {
 
 // Define a resolver module and resolution rules
 struct MyResolver;
-
-// Resolution rules for simple singletons
-resolve_singleton!(MyResolver,
-    MySharedData => MySharedData::default,
-    dyn MyTrait => MyImpl::default
-);
+resolve_singleton!(MyResolver,  dyn MyTrait => MyImpl::default);
 
 
-// Create and use an injector using our resolver module
+// Create and use an injector based on the resolver module
 let injector = Hanami::new(MyResolver);
-let a: Arc<dyn MyTrait> = injector.inject()?;
-a.cheers();
+let mt: Arc<dyn MyTrait> = injector.inject();
+mt.cheers();
 ```
+
+## Define and compose resolution rules
+
+The resolution rules are declared using the [resolve_singleton] and [resolve_instance] macros.
+These macros define (for a given resolution module) a map associating resolvable types to the constructors
+used to create instances. All parameters of the constructor must be resolvable types. Note that constructors
+are currently limited to 10 parameters.
+They can be applied multiple times (for different target types) to the same resolver module.
+
+Furthermore, the [resolve_proxy] macro macro allows to compose the resolution rules defined in existing
+resolver modules. The proxy resolver struct must contain instances of these modules and will forward the
+resolution of its associated types. It can add its own rules on top of the delegated rules, but overriding
+rules is not supported.
+
+## Cyclical dependencies
+
+Cyclical dependencies between injected types avoid infinite loops but trigger a panic at runtime.
+As resolution rules are independent, they can not be detected at compile time (this is the case in
+[shaku](https://crates.io/crates/shaku) when using a single macro to define all resolution rules at once).
+
+## Override
+
+The user can override the provider for a given target type **before the first runtime-resolution of this type**.
+This allows for example to set a mock or an alternative implementation at runtime.
+See the [Inject::set_provider] function.
 
 ## Mechanism
 
@@ -61,21 +77,3 @@ The resolver mechanism enables to create the injection rules, but is not exposed
   It implements the [Inject] trait for all types resolved by the resolver module.
   This provides additional compile-time guarantees on the injectable types, controlled by
   implementations of [Resolve] associated to the resolver module.
-
-## Composition
-
-The resolution rules can be defined using several resolver modules and composed using a proxy resolver.
-A proxy resolver contains another resolver module and will forward the resolution of its associated types.
-See the [resolve_proxy] macro to declare proxy resolution rules.
-
-## Cyclical dependencies
-
-Cyclical dependencies between injected types trigger an error at runtime (without infinite looping).
-As resolution rules are independent, they can not be detected at compile time (this is the case in
-[shaku](https://crates.io/crates/shaku) when using a single macro to define all resolution rules at once).
-
-## Override
-
-The user can override the provider for a given target type **before the first runtime-resolution of this type**.
-This allows to set a mock or an alternative implementation at runtime.
-See the [Inject::set_provider] function.
