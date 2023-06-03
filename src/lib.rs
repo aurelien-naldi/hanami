@@ -24,6 +24,10 @@
 //!   }
 //! }
 //!
+//! fn some_injectable_function(mt: Arc<dyn MyTrait>) {
+//!     mt.cheers();
+//! }
+//!
 //!
 //! // Define a resolver module and resolution rules
 //! struct MyResolver;
@@ -34,6 +38,9 @@
 //! let injector = hanami::Hanami::new(MyResolver);
 //! let mt: Arc<dyn MyTrait> = injector.inject();
 //! mt.cheers();
+//!
+//! // Functions taking only injectable parameters can be called directly
+//! injector.inject_and_call(&some_injectable_function)
 //! ```
 //!
 //! # Override

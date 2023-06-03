@@ -50,6 +50,16 @@ impl<R> Hanami<R> {
         tm.set_if_vacant::<Provider<T>>(TypeMapEntry::Ready(Box::new(provider)));
         Ok(())
     }
+
+    /// Call a function after injecting all its parameters
+    pub fn inject_and_call<F, I, O>(&self, f: F) -> O
+    where
+        I: Injectable<R>,
+        F: Callable<I, O>,
+    {
+        let mut tm = self.tm.lock().unwrap();
+        tm.inject_and_call(&self.resolver, f)
+    }
 }
 
 #[derive(Debug)]
