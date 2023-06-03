@@ -1,6 +1,6 @@
 use std::{rc::Rc, sync::Arc, time::SystemTime};
 
-use hanami::*;
+use hanami::{resolve_delegated, resolve_instance, resolve_singleton, Hanami};
 
 // Define regular traits and implementor structs
 
@@ -79,12 +79,12 @@ resolve_singleton!(LogResolver,
 );
 
 // Declare proxy resolution rules
-resolve_proxy!(MyResolver, LogResolver => helper);
+resolve_delegated!(MyResolver, LogResolver => helper);
 
 resolve_instance!(MyResolver, Rc: MyCommand => MyCommand : MyCommand::new);
 
 #[allow(clippy::vtable_address_comparisons)]
-fn main() -> Result<(), WiringError> {
+fn main() {
     let injector = Hanami::new(MyResolver {
         helper: LogResolver {},
     });
@@ -95,6 +95,4 @@ fn main() -> Result<(), WiringError> {
 
     let c: Rc<MyCommand> = injector.inject();
     c.call_me();
-
-    Ok(())
 }

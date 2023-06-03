@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use super::*;
+use crate::{resolve, resolve_instance, resolve_singleton};
+
+use super::Hanami;
 
 trait TestTrait: Send + Sync {
     fn cheers(&self);
@@ -79,7 +81,7 @@ fn is_same_ptr<T: ?Sized>(a1: &Arc<T>, a2: &Arc<T>) -> bool {
 }
 
 #[test]
-fn resolve_singleton() -> Result<(), WiringError> {
+fn resolve_singleton() {
     let resolver = Hanami::new(TestModule);
 
     let v1: Arc<dyn TestTrait> = resolver.inject();
@@ -96,16 +98,14 @@ fn resolve_singleton() -> Result<(), WiringError> {
 
     let simple_action: SimpleAction = resolver.inject();
     simple_action.callme();
-
-    Ok(())
 }
 
 #[test]
-fn set_provider_early() -> Result<(), WiringError> {
+fn set_provider_early() -> Result<(), resolve::WiringError> {
     let mut resolver = Hanami::new(TestModule);
 
     let singleton: Arc<dyn TestTrait> = Arc::new(SecretImpl::default());
-    resolver.set_provider(SingletonProvider::build(singleton.clone()))?;
+    resolver.set_provider(resolve::SingletonProvider::build(singleton.clone()))?;
 
     let v1: Arc<dyn TestTrait> = resolver.inject();
     assert!(is_same_ptr(&v1, &singleton));
@@ -114,21 +114,19 @@ fn set_provider_early() -> Result<(), WiringError> {
 }
 
 #[test]
-fn set_provider_late() -> Result<(), WiringError> {
+fn set_provider_late() {
     let mut resolver = Hanami::new(TestModule);
 
     let v1: Arc<dyn TestTrait> = resolver.inject();
 
     let singleton: Arc<dyn TestTrait> = Arc::new(SecretImpl::default());
     assert!(resolver
-        .set_provider(SingletonProvider::build(singleton.clone()))
+        .set_provider(resolve::SingletonProvider::build(singleton.clone()))
         .is_err());
 
     let v2: Arc<dyn TestTrait> = resolver.inject();
     assert!(!is_same_ptr(&v1, &singleton));
     assert!(is_same_ptr(&v1, &v2));
-
-    Ok(())
 }
 
 #[test]

@@ -2,25 +2,12 @@ use std::any::{Any, TypeId};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::{Arc, Mutex};
 
-use crate::*;
-
-/// Application-level dependency injection
-pub trait Inject<T> {
-    /// Obtain an instance of the target type.
-    ///
-    /// Return an error if the type could not be resolved
-    fn inject(&self) -> T;
-
-    /// Override the provider for the target type.
-    ///
-    /// Return an error if the type has already been resolved
-    fn set_provider(&mut self, provider: Provider<T>) -> Result<(), WiringError>;
-}
+use crate::resolve::*;
 
 /// Dependency injection registry.
 ///
-/// The [Resolve] implementations of the associated resolver are used
-///  to derive [Inject] implementations on the registry itself.
+/// This struct combines a [ProviderMap] with a resolver module.
+/// It can then resolve and inject all types resolved by the resolver module.
 pub struct Hanami<R> {
     tm: Mutex<TypeMap>,
     resolver: R,
@@ -37,14 +24,25 @@ impl<R> Hanami<R> {
     pub fn get_resolver(&self) -> &R {
         &self.resolver
     }
-}
 
-/// Provide an Inject impl for all types resolved by Hanami's associated module
-impl<T: 'static, M: Resolve<T>> Inject<T> for Hanami<M> {
-    fn inject(&self) -> T {
-        self.tm.lock().unwrap().inject_with(&self.resolver)
+    /// Obtain an instance of the target type.
+    ///
+    /// Return an error if the type could not be resolved
+    pub fn inject<T: 'static + ResolvedBy<R>>(&self) -> T {
+        self.tm
+            .lock()
+            .unwrap()
+            .resolve_with(&self.resolver)
+            .provide()
     }
-    fn set_provider(&mut self, provider: Provider<T>) -> Result<(), WiringError> {
+
+    /// Override the provider for the target type.
+    ///
+    /// Return an error if the type has already been resolved
+    pub fn set_provider<T>(&mut self, provider: Provider<T>) -> Result<(), WiringError>
+    where
+        T: 'static + ResolvedBy<R>,
+    {
         let mut tm = self.tm.lock().unwrap();
         if tm.get_provider::<T>().is_some() {
             return Err(WiringError::AlreadyResolved);
@@ -110,16 +108,7 @@ impl TypeMap {
 }
 
 impl ProviderMap for TypeMap {
-    fn resolve_with<T: 'static>(&mut self, resolver: &impl Resolve<T>) -> &Provider<T> {
-        if self.get_provider::<T>().is_none() {
-            self.set_if_vacant::<Provider<T>>(TypeMapEntry::Resolving);
-            let p = resolver.build_provider(self);
-            self.set_if_resolving::<Provider<T>>(TypeMapEntry::Ready(Box::new(p)));
-        }
-        self.get_provider().unwrap()
-    }
-
-    fn resolved_with<R, T: ResolvedBy<R> + 'static>(&mut self, resolver: &R) -> &Provider<T> {
+    fn resolve_with<R, T: ResolvedBy<R> + 'static>(&mut self, resolver: &R) -> &Provider<T> {
         if self.get_provider::<T>().is_none() {
             self.set_if_vacant::<Provider<T>>(TypeMapEntry::Resolving);
             let p = T::build_provider(resolver, self);
@@ -142,14 +131,6 @@ pub trait Callable<Args, Ret> {
     fn call(&self, args: Args) -> Ret;
 }
 
-/// Mark a derived type as resolvable by a given resolver
-///
-/// This trait is implemented for tuples of resolved types
-pub trait Injectable<R>: Sized {
-    fn inject(resolver: &R, injector: &mut impl ProviderMap) -> Self;
-    fn provide(resolver: &R, injector: &mut impl ProviderMap) -> Provider<Self>;
-}
-
 macro_rules! callable_tuple ({ $($param:ident)* } => {
     impl<Func, Ret, $($param,)*> Callable<($($param,)*), Ret> for Func
     where
@@ -170,7 +151,7 @@ macro_rules! callable_tuple ({ $($param:ident)* } => {
             _resolver: &R,
             _injector: &mut impl ProviderMap,
         ) -> Self {
-            ($(_injector.injected_with::<R,$param>(_resolver),)*)
+            ($(_injector.resolve_with::<R,$param>(_resolver).provide(),)*)
         }
 
         #[inline]
@@ -178,7 +159,7 @@ macro_rules! callable_tuple ({ $($param:ident)* } => {
             _resolver: &R,
             _injector: &mut impl ProviderMap,
         ) -> Provider<Self> {
-            Arc::new(($(_injector.resolved_with::<R,$param>(_resolver).clone(),)*))
+            Arc::new(($(_injector.resolve_with::<R,$param>(_resolver).clone(),)*))
         }
 }
 
